@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.elendheim.eartrainer.audio.TonePlayer
 import com.elendheim.eartrainer.data.PlayerState
 import com.elendheim.eartrainer.data.ProgressRepository
+import com.elendheim.eartrainer.model.Challenge
 import com.elendheim.eartrainer.model.Difficulty
 import com.elendheim.eartrainer.model.Leveling
 import com.elendheim.eartrainer.model.Note
@@ -19,7 +20,7 @@ import java.time.LocalDate
 import kotlin.math.min
 import kotlin.random.Random
 
-enum class Mode { FREE, DAILY }
+enum class Mode { FREE, DAILY, CHALLENGE }
 
 enum class Phase { IDLE, GUESSING, ANSWERED, DONE }
 
@@ -36,14 +37,16 @@ data class GameUiState(
     val guessMidi: Int = -1,
     val wasCorrect: Boolean = false,
     val sessionXp: Int = 0,
-    val dailyBonusXp: Int = 0,
+    val bonusXp: Int = 0,
     val newDailyStreak: Int = 0,
+    val challengeName: String? = null,
+    val previousBest: Int = -1,        // best score for this challenge before this run
     val leveledUpTo: Int = 0,          // > 0 while a level-up banner should show
     val difficulty: Difficulty = Difficulty(),
     val flStyleOctaves: Boolean = false,
 )
 
-private data class DailyQuestion(val midi: Int, val difficulty: Difficulty)
+private data class RunQuestion(val midi: Int, val difficulty: Difficulty)
 
 class GameViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -57,9 +60,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<GameUiState> = _uiState
 
     private var freePlayRandom = Random(System.nanoTime())
-    private var dailyQuestions: List<DailyQuestion> = emptyList()
+    private var runQuestions: List<RunQuestion> = emptyList()
     private var xpBeforeSession = 0
     private var currentDay = 0L
+    private var activeChallenge: Challenge? = null
 
     fun todayEpochDay(): Long = LocalDate.now().toEpochDay()
 
@@ -85,14 +89,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val player = repository.state.first()
             xpBeforeSession = player.xp
+            activeChallenge = null
             currentDay = todayEpochDay()
-            dailyQuestions = buildDailyQuestions(currentDay)
-            val first = dailyQuestions.first()
+            runQuestions = buildDailyQuestions(currentDay)
+            val first = runQuestions.first()
             _uiState.value = GameUiState(
                 mode = Mode.DAILY,
                 phase = Phase.GUESSING,
                 questionNumber = 1,
-                questionCount = dailyQuestions.size,
+                questionCount = runQuestions.size,
                 replaysLeft = first.difficulty.maxReplays,
                 targetMidi = first.midi,
                 difficulty = first.difficulty,
@@ -102,11 +107,37 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun startChallenge(challenge: Challenge) {
+        viewModelScope.launch {
+            val player = repository.state.first()
+            xpBeforeSession = player.xp
+            activeChallenge = challenge
+            val random = Random(System.nanoTime())
+            runQuestions = List(challenge.questionCount) {
+                RunQuestion(challenge.difficulty.randomNote(random), challenge.difficulty)
+            }
+            val first = runQuestions.first()
+            _uiState.value = GameUiState(
+                mode = Mode.CHALLENGE,
+                phase = Phase.GUESSING,
+                questionNumber = 1,
+                questionCount = runQuestions.size,
+                replaysLeft = first.difficulty.maxReplays,
+                targetMidi = first.midi,
+                difficulty = first.difficulty,
+                flStyleOctaves = player.flStyleOctaves,
+                challengeName = challenge.name,
+                previousBest = player.bestFor(challenge.id) ?: -1,
+            )
+            playTarget()
+        }
+    }
+
     /**
      * The same date always produces the same ten notes, ramping from one
      * octave of white keys up to the full roll with no anchor.
      */
-    private fun buildDailyQuestions(epochDay: Long): List<DailyQuestion> {
+    private fun buildDailyQuestions(epochDay: Long): List<RunQuestion> {
         val random = Random(epochDay * 31L + 7L)
         val stages = listOf(
             Difficulty(60, 71, includeBlackKeys = false, maxReplays = 3, referenceC = true),
@@ -120,7 +151,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             Difficulty(48, 83, includeBlackKeys = true, maxReplays = 3, referenceC = false),
             Difficulty(36, 96, includeBlackKeys = true, maxReplays = 3, referenceC = false),
         )
-        return stages.map { stage -> DailyQuestion(stage.randomNote(random), stage) }
+        return stages.map { stage -> RunQuestion(stage.randomNote(random), stage) }
     }
 
     fun playTarget() {
@@ -166,6 +197,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             val base = when (state.mode) {
                 Mode.FREE -> state.difficulty.xpPerCorrect()
                 Mode.DAILY -> DAILY_XP_PER_CORRECT
+                Mode.CHALLENGE -> state.difficulty.xpPerCorrect()
             }
             // A running streak pays up to double XP.
             val multiplier = min(2.0, 1.0 + newStreak * 0.1)
@@ -209,11 +241,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 playTarget()
             }
-            Mode.DAILY -> {
-                if (state.questionNumber >= dailyQuestions.size) {
-                    finishDaily(state)
+            Mode.DAILY, Mode.CHALLENGE -> {
+                if (state.questionNumber >= runQuestions.size) {
+                    finishRun(state)
                 } else {
-                    val nextQuestion = dailyQuestions[state.questionNumber]
+                    val nextQuestion = runQuestions[state.questionNumber]
                     _uiState.value = state.copy(
                         phase = Phase.GUESSING,
                         questionNumber = state.questionNumber + 1,
@@ -229,19 +261,34 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun finishDaily(state: GameUiState) {
+    private fun finishRun(state: GameUiState) {
         viewModelScope.launch {
-            val newStreak = repository.completeDaily(currentDay, state.correctCount)
-            val bonus = DAILY_COMPLETION_BONUS + min(newStreak * 5, 50)
-            repository.addXp(bonus)
+            var newDailyStreak = 0
+            val bonus: Int
+            when (state.mode) {
+                Mode.DAILY -> {
+                    newDailyStreak = repository.completeDaily(currentDay, state.correctCount)
+                    bonus = DAILY_COMPLETION_BONUS + min(newDailyStreak * 5, 50)
+                    repository.addXp(bonus)
+                }
+                Mode.CHALLENGE -> {
+                    // Clearing pays the most; partial runs still earn a little.
+                    val cleared = state.correctCount == state.questionCount
+                    bonus = if (cleared) CHALLENGE_CLEAR_BONUS else state.correctCount * 2
+                    activeChallenge?.let {
+                        repository.recordChallengeResult(it.id, state.correctCount, bonus)
+                    }
+                }
+                Mode.FREE -> bonus = 0
+            }
             val totalXp = xpBeforeSession + state.sessionXp + bonus
             val levelBefore = Leveling.levelForXp(xpBeforeSession + state.sessionXp)
             val levelAfter = Leveling.levelForXp(totalXp)
             _uiState.value = state.copy(
                 phase = Phase.DONE,
                 sessionXp = state.sessionXp + bonus,
-                dailyBonusXp = bonus,
-                newDailyStreak = newStreak,
+                bonusXp = bonus,
+                newDailyStreak = newDailyStreak,
                 leveledUpTo = if (levelAfter > levelBefore) levelAfter else 0,
             )
         }
@@ -262,5 +309,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         const val DAILY_XP_PER_CORRECT = 12
         const val DAILY_COMPLETION_BONUS = 30
+        const val CHALLENGE_CLEAR_BONUS = 40
     }
 }

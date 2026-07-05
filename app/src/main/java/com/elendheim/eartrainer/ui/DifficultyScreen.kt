@@ -75,25 +75,37 @@ fun DifficultyScreen(
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
         )
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            DIFFICULTY_PRESETS.forEach { preset ->
-                FilterChip(
-                    selected = difficulty == preset.difficulty,
-                    onClick = {
-                        update(preset.difficulty)
-                        sliderRange = preset.difficulty.lowMidi.toFloat()..
-                            preset.difficulty.highMidi.toFloat()
-                    },
-                    label = { Text(preset.name) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = AccentDim,
-                        selectedLabelColor = Color.White,
-                    ),
-                    modifier = Modifier.weight(1f),
-                )
+        // Two per row so each chip is wide enough to hold its name on one
+        // line. Chips stay equal width and never wrap their label.
+        DIFFICULTY_PRESETS.chunked(2).forEach { rowPresets ->
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                rowPresets.forEach { preset ->
+                    FilterChip(
+                        selected = difficulty == preset.difficulty,
+                        onClick = {
+                            update(preset.difficulty)
+                            sliderRange = preset.difficulty.lowMidi.toFloat()..
+                                preset.difficulty.highMidi.toFloat()
+                        },
+                        label = {
+                            Text(
+                                preset.name,
+                                maxLines = 1,
+                                softWrap = false,
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = AccentDim,
+                            selectedLabelColor = Color.White,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                // Keep the last row aligned when the preset count is odd.
+                if (rowPresets.size == 1) Spacer(Modifier.weight(1f))
             }
         }
 

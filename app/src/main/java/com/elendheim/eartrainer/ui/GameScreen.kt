@@ -1,5 +1,6 @@
 package com.elendheim.eartrainer.ui
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -43,12 +45,15 @@ fun GameScreen(viewModel: GameViewModel, onExit: () -> Unit) {
     val ui by viewModel.uiState.collectAsState()
 
     if (ui.phase == Phase.DONE) {
-        DailySummary(
+        RunSummary(
+            mode = ui.mode,
+            title = ui.challengeName ?: "Challenge complete",
             score = ui.correctCount,
             total = ui.questionCount,
             sessionXp = ui.sessionXp,
-            bonusXp = ui.dailyBonusXp,
+            bonusXp = ui.bonusXp,
             dailyStreak = ui.newDailyStreak,
+            previousBest = ui.previousBest,
             leveledUpTo = ui.leveledUpTo,
             onDone = onExit,
         )
@@ -93,10 +98,13 @@ fun GameScreen(viewModel: GameViewModel, onExit: () -> Unit) {
             Text(
                 text = when (ui.mode) {
                     Mode.DAILY -> "Daily ${ui.questionNumber}/${ui.questionCount}"
+                    Mode.CHALLENGE -> "${ui.questionNumber}/${ui.questionCount}"
                     Mode.FREE -> "Free play"
                 },
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                softWrap = false,
             )
             Text(
                 "+${ui.sessionXp} XP",
@@ -144,9 +152,12 @@ fun GameScreen(viewModel: GameViewModel, onExit: () -> Unit) {
 
         Spacer(Modifier.weight(1f))
 
-        // Octave picker: labels follow the player's naming preference.
+        // Octave picker: labels follow the player's naming preference. It
+        // scrolls so a wide range never clips or wraps off the edge.
         Row(
-            Modifier.fillMaxWidth(),
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         ) {
             (lowOctave..highOctave).forEach { octave ->
@@ -284,15 +295,19 @@ private fun AnswerPanel(
 }
 
 @Composable
-private fun DailySummary(
+private fun RunSummary(
+    mode: Mode,
+    title: String,
     score: Int,
     total: Int,
     sessionXp: Int,
     bonusXp: Int,
     dailyStreak: Int,
+    previousBest: Int,
     leveledUpTo: Int,
     onDone: () -> Unit,
 ) {
+    val cleared = score == total
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -301,9 +316,10 @@ private fun DailySummary(
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            "Challenge complete",
+            if (mode == Mode.DAILY) "Challenge complete" else title,
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(16.dp))
         Text(
@@ -319,11 +335,25 @@ private fun DailySummary(
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(8.dp))
-        Text(
-            if (dailyStreak > 1) "Daily streak: $dailyStreak days." else "Daily streak started.",
-            color = Warm,
-            style = MaterialTheme.typography.titleMedium,
-        )
+        when (mode) {
+            Mode.DAILY -> Text(
+                if (dailyStreak > 1) "Daily streak: $dailyStreak days." else "Daily streak started.",
+                color = Warm,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Mode.CHALLENGE -> Text(
+                when {
+                    cleared && previousBest < total -> "Cleared. New best."
+                    cleared -> "Cleared again."
+                    score > previousBest -> "New best score."
+                    else -> "Best so far: $previousBest / $total."
+                },
+                color = if (cleared) Accent else Warm,
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.Center,
+            )
+            Mode.FREE -> {}
+        }
         if (leveledUpTo > 0) {
             Spacer(Modifier.height(8.dp))
             Text(

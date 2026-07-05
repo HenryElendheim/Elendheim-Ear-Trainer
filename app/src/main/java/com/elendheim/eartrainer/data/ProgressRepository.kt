@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.elendheim.eartrainer.model.Challenges
 import com.elendheim.eartrainer.model.Difficulty
 import com.elendheim.eartrainer.model.Leveling
 import kotlinx.coroutines.flow.Flow
@@ -24,12 +25,16 @@ data class PlayerState(
     val lastDailyScore: Int = -1,
     val difficulty: Difficulty = Difficulty(),
     val flStyleOctaves: Boolean = false,
+    /** Best score per challenge id; absent means never cleared. */
+    val challengeBest: Map<String, Int> = emptyMap(),
 ) {
     val level: Int get() = Leveling.levelForXp(xp)
     val accuracyPercent: Int
         get() = if (totalAnswered == 0) 0 else totalCorrect * 100 / totalAnswered
 
     fun hasPlayedDaily(day: Long): Boolean = lastDailyDay == day
+
+    fun bestFor(challengeId: String): Int? = challengeBest[challengeId]
 }
 
 class ProgressRepository(private val context: Context) {
@@ -49,6 +54,7 @@ class ProgressRepository(private val context: Context) {
         val DIFF_REPLAYS = intPreferencesKey("diff_replays")
         val DIFF_REFERENCE_C = booleanPreferencesKey("diff_reference_c")
         val FL_OCTAVES = booleanPreferencesKey("fl_octaves")
+        fun challengeBest(id: String) = intPreferencesKey("challenge_best_$id")
     }
 
     val state: Flow<PlayerState> = context.dataStore.data.map { prefs ->
@@ -69,6 +75,9 @@ class ProgressRepository(private val context: Context) {
                 referenceC = prefs[Keys.DIFF_REFERENCE_C] ?: true,
             ),
             flStyleOctaves = prefs[Keys.FL_OCTAVES] ?: false,
+            challengeBest = Challenges.all.mapNotNull { challenge ->
+                prefs[Keys.challengeBest(challenge.id)]?.let { challenge.id to it }
+            }.toMap(),
         )
     }
 
@@ -117,6 +126,19 @@ class ProgressRepository(private val context: Context) {
             }
         }
         return newStreak
+    }
+
+    /** Stores a challenge result, keeping the best score seen, and pays XP. */
+    suspend fun recordChallengeResult(challengeId: String, score: Int, xpGained: Int) {
+        context.dataStore.edit { prefs ->
+            val key = Keys.challengeBest(challengeId)
+            if (score > (prefs[key] ?: -1)) {
+                prefs[key] = score
+            }
+            if (xpGained > 0) {
+                prefs[Keys.XP] = (prefs[Keys.XP] ?: 0) + xpGained
+            }
+        }
     }
 
     suspend fun saveDifficulty(difficulty: Difficulty) {

@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.elendheim.eartrainer.data.PlayerState
+import com.elendheim.eartrainer.model.Challenges
 import com.elendheim.eartrainer.model.Leveling
 
 @Composable
@@ -36,6 +37,7 @@ fun HomeScreen(
     todayEpochDay: Long,
     onPlayFree: () -> Unit,
     onPlayDaily: () -> Unit,
+    onOpenChallenges: () -> Unit,
     onOpenDifficulty: () -> Unit,
 ) {
     val dailyDone = player.hasPlayedDaily(todayEpochDay)
@@ -49,8 +51,8 @@ fun HomeScreen(
     ) {
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Ear Trainer",
-            style = MaterialTheme.typography.headlineMedium,
+            text = "Elendheim Ear Trainer",
+            style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
         )
         Text(
@@ -100,6 +102,38 @@ fun HomeScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = Accent),
                 ) {
                     Text(if (dailyDone) "Come back tomorrow" else "Play today's challenge")
+                }
+            }
+        }
+
+        Card(
+            colors = CardDefaults.cardColors(containerColor = SurfaceHigh),
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Challenges",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        "${Challenges.unlockedCount(player.level)} / ${Challenges.all.size}",
+                        color = Accent,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+                Text(
+                    text = "Set runs you unlock by leveling up. Clear them for bonus XP.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(onClick = onOpenChallenges, modifier = Modifier.fillMaxWidth()) {
+                    Text("Open challenges")
                 }
             }
         }
@@ -168,6 +202,18 @@ private fun LevelCard(player: PlayerState) {
                     .clip(RoundedCornerShape(4.dp)),
                 color = Accent,
                 trackColor = Canvas,
+            )
+            val nextUnlock = Challenges.nextUnlockLevel(player.level)
+            Text(
+                text = if (nextUnlock != null) {
+                    "Next challenge at level $nextUnlock"
+                } else {
+                    "All challenges unlocked"
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
             )
         }
     }
