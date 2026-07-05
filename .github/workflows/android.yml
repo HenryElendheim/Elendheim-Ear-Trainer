@@ -5,6 +5,11 @@ on:
     branches: ["**"]
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to release, e.g. v1.0.0. Leave empty for a plain build."
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -33,14 +38,24 @@ jobs:
           name: elendheim-ear-trainer-debug
           path: app/build/outputs/apk/debug/app-debug.apk
 
+      - name: Decide release version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          elif [[ -n "${{ github.event.inputs.version }}" ]]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Prepare release APK
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: cp app/build/outputs/apk/debug/app-debug.apk "elendheim-ear-trainer-${{ github.ref_name }}.apk"
+        if: steps.version.outputs.version != ''
+        run: cp app/build/outputs/apk/debug/app-debug.apk "elendheim-ear-trainer-${{ steps.version.outputs.version }}.apk"
 
       - name: Create GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.version.outputs.version != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.version }}
           files: elendheim-ear-trainer-*.apk
           body: |
             Installable debug build of Elendheim Ear Trainer.
