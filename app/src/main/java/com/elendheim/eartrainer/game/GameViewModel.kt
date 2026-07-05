@@ -1,0 +1,266 @@
+package com.elendheim.eartrainer.game
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.elendheim.eartrainer.audio.TonePlayer
+import com.elendheim.eartrainer.data.PlayerState
+import com.elendheim.eartrainer.data.ProgressRepository
+import com.elendheim.eartrainer.model.Difficulty
+import com.elendheim.eartrainer.model.Leveling
+import com.elendheim.eartrainer.model.Note
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import java.time.LocalDate
+import kotlin.math.min
+import kotlin.random.Random
+
+enum class Mode { FREE, DAILY }
+
+enum class Phase { IDLE, GUESSING, ANSWERED, DONE }
+
+data class GameUiState(
+    val mode: Mode = Mode.FREE,
+    val phase: Phase = Phase.IDLE,
+    val questionNumber: Int = 0,       // 1-based
+    val questionCount: Int = 0,        // 0 means endless
+    val correctCount: Int = 0,
+    val answeredCount: Int = 0,
+    val streak: Int = 0,
+    val replaysLeft: Int = 0,
+    val targetMidi: Int = -1,
+    val guessMidi: Int = -1,
+    val wasCorrect: Boolean = false,
+    val sessionXp: Int = 0,
+    val dailyBonusXp: Int = 0,
+    val newDailyStreak: Int = 0,
+    val leveledUpTo: Int = 0,          // > 0 while a level-up banner should show
+    val difficulty: Difficulty = Difficulty(),
+    val flStyleOctaves: Boolean = false,
+)
+
+private data class DailyQuestion(val midi: Int, val difficulty: Difficulty)
+
+class GameViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val repository = ProgressRepository(application)
+    private val tonePlayer = TonePlayer()
+
+    val playerState: StateFlow<PlayerState> = repository.state
+        .stateIn(viewModelScope, SharingStarted.Eagerly, PlayerState())
+
+    private val _uiState = MutableStateFlow(GameUiState())
+    val uiState: StateFlow<GameUiState> = _uiState
+
+    private var freePlayRandom = Random(System.nanoTime())
+    private var dailyQuestions: List<DailyQuestion> = emptyList()
+    private var xpBeforeSession = 0
+    private var currentDay = 0L
+
+    fun todayEpochDay(): Long = LocalDate.now().toEpochDay()
+
+    fun startFreePlay() {
+        viewModelScope.launch {
+            val player = repository.state.first()
+            xpBeforeSession = player.xp
+            _uiState.value = GameUiState(
+                mode = Mode.FREE,
+                phase = Phase.GUESSING,
+                questionNumber = 1,
+                questionCount = 0,
+                replaysLeft = player.difficulty.maxReplays,
+                targetMidi = player.difficulty.randomNote(freePlayRandom),
+                difficulty = player.difficulty,
+                flStyleOctaves = player.flStyleOctaves,
+            )
+            playTarget()
+        }
+    }
+
+    fun startDaily() {
+        viewModelScope.launch {
+            val player = repository.state.first()
+            xpBeforeSession = player.xp
+            currentDay = todayEpochDay()
+            dailyQuestions = buildDailyQuestions(currentDay)
+            val first = dailyQuestions.first()
+            _uiState.value = GameUiState(
+                mode = Mode.DAILY,
+                phase = Phase.GUESSING,
+                questionNumber = 1,
+                questionCount = dailyQuestions.size,
+                replaysLeft = first.difficulty.maxReplays,
+                targetMidi = first.midi,
+                difficulty = first.difficulty,
+                flStyleOctaves = player.flStyleOctaves,
+            )
+            playTarget()
+        }
+    }
+
+    /**
+     * The same date always produces the same ten notes, ramping from one
+     * octave of white keys up to the full roll with no anchor.
+     */
+    private fun buildDailyQuestions(epochDay: Long): List<DailyQuestion> {
+        val random = Random(epochDay * 31L + 7L)
+        val stages = listOf(
+            Difficulty(60, 71, includeBlackKeys = false, maxReplays = 3, referenceC = true),
+            Difficulty(60, 71, includeBlackKeys = false, maxReplays = 3, referenceC = true),
+            Difficulty(60, 71, includeBlackKeys = false, maxReplays = 3, referenceC = true),
+            Difficulty(60, 83, includeBlackKeys = false, maxReplays = 3, referenceC = true),
+            Difficulty(60, 83, includeBlackKeys = false, maxReplays = 3, referenceC = true),
+            Difficulty(60, 83, includeBlackKeys = true, maxReplays = 3, referenceC = false),
+            Difficulty(60, 83, includeBlackKeys = true, maxReplays = 3, referenceC = false),
+            Difficulty(48, 83, includeBlackKeys = true, maxReplays = 3, referenceC = false),
+            Difficulty(48, 83, includeBlackKeys = true, maxReplays = 3, referenceC = false),
+            Difficulty(36, 96, includeBlackKeys = true, maxReplays = 3, referenceC = false),
+        )
+        return stages.map { stage -> DailyQuestion(stage.randomNote(random), stage) }
+    }
+
+    fun playTarget() {
+        val state = _uiState.value
+        if (state.targetMidi < 0) return
+        viewModelScope.launch {
+            val sequence = if (state.difficulty.referenceC) {
+                listOf(Note.MIDDLE_C, state.targetMidi)
+            } else {
+                listOf(state.targetMidi)
+            }
+            tonePlayer.playSequence(sequence)
+        }
+    }
+
+    fun replay() {
+        val state = _uiState.value
+        if (state.phase != Phase.GUESSING) return
+        val unlimited = state.difficulty.maxReplays >= Difficulty.REPLAYS_UNLIMITED
+        if (!unlimited && state.replaysLeft <= 0) return
+        if (!unlimited) {
+            _uiState.value = state.copy(replaysLeft = state.replaysLeft - 1)
+        }
+        playTarget()
+    }
+
+    /** Plays what the player guessed, then what the note actually was. */
+    fun compareGuessToTarget() {
+        val state = _uiState.value
+        if (state.phase != Phase.ANSWERED || state.guessMidi < 0) return
+        viewModelScope.launch {
+            tonePlayer.playSequence(listOf(state.guessMidi, state.targetMidi))
+        }
+    }
+
+    fun submitGuess(guessMidi: Int) {
+        val state = _uiState.value
+        if (state.phase != Phase.GUESSING) return
+        val correct = guessMidi == state.targetMidi
+        val newStreak = if (correct) state.streak + 1 else 0
+
+        val xpGained = if (correct) {
+            val base = when (state.mode) {
+                Mode.FREE -> state.difficulty.xpPerCorrect()
+                Mode.DAILY -> DAILY_XP_PER_CORRECT
+            }
+            // A running streak pays up to double XP.
+            val multiplier = min(2.0, 1.0 + newStreak * 0.1)
+            (base * multiplier).toInt()
+        } else {
+            0
+        }
+
+        val newSessionXp = state.sessionXp + xpGained
+        val levelBefore = Leveling.levelForXp(xpBeforeSession + state.sessionXp)
+        val levelAfter = Leveling.levelForXp(xpBeforeSession + newSessionXp)
+
+        _uiState.value = state.copy(
+            phase = Phase.ANSWERED,
+            guessMidi = guessMidi,
+            wasCorrect = correct,
+            correctCount = state.correctCount + if (correct) 1 else 0,
+            answeredCount = state.answeredCount + 1,
+            streak = newStreak,
+            sessionXp = newSessionXp,
+            leveledUpTo = if (levelAfter > levelBefore) levelAfter else 0,
+        )
+
+        viewModelScope.launch {
+            repository.recordAnswer(correct, newStreak, xpGained)
+        }
+    }
+
+    fun next() {
+        val state = _uiState.value
+        if (state.phase != Phase.ANSWERED) return
+        when (state.mode) {
+            Mode.FREE -> {
+                _uiState.value = state.copy(
+                    phase = Phase.GUESSING,
+                    questionNumber = state.questionNumber + 1,
+                    replaysLeft = state.difficulty.maxReplays,
+                    targetMidi = state.difficulty.randomNote(freePlayRandom),
+                    guessMidi = -1,
+                    leveledUpTo = 0,
+                )
+                playTarget()
+            }
+            Mode.DAILY -> {
+                if (state.questionNumber >= dailyQuestions.size) {
+                    finishDaily(state)
+                } else {
+                    val nextQuestion = dailyQuestions[state.questionNumber]
+                    _uiState.value = state.copy(
+                        phase = Phase.GUESSING,
+                        questionNumber = state.questionNumber + 1,
+                        replaysLeft = nextQuestion.difficulty.maxReplays,
+                        targetMidi = nextQuestion.midi,
+                        difficulty = nextQuestion.difficulty,
+                        guessMidi = -1,
+                        leveledUpTo = 0,
+                    )
+                    playTarget()
+                }
+            }
+        }
+    }
+
+    private fun finishDaily(state: GameUiState) {
+        viewModelScope.launch {
+            val newStreak = repository.completeDaily(currentDay, state.correctCount)
+            val bonus = DAILY_COMPLETION_BONUS + min(newStreak * 5, 50)
+            repository.addXp(bonus)
+            val totalXp = xpBeforeSession + state.sessionXp + bonus
+            val levelBefore = Leveling.levelForXp(xpBeforeSession + state.sessionXp)
+            val levelAfter = Leveling.levelForXp(totalXp)
+            _uiState.value = state.copy(
+                phase = Phase.DONE,
+                sessionXp = state.sessionXp + bonus,
+                dailyBonusXp = bonus,
+                newDailyStreak = newStreak,
+                leveledUpTo = if (levelAfter > levelBefore) levelAfter else 0,
+            )
+        }
+    }
+
+    fun saveDifficulty(difficulty: Difficulty) {
+        viewModelScope.launch { repository.saveDifficulty(difficulty) }
+    }
+
+    fun setFlStyleOctaves(enabled: Boolean) {
+        viewModelScope.launch { repository.setFlStyleOctaves(enabled) }
+    }
+
+    override fun onCleared() {
+        tonePlayer.release()
+    }
+
+    companion object {
+        const val DAILY_XP_PER_CORRECT = 12
+        const val DAILY_COMPLETION_BONUS = 30
+    }
+}

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Three white piano keys -->
+    <path
+        android:fillColor="#F4F6F8"
+        android:pathData="M32,30 h13 v48 a3,3 0 0 1 -3,3 h-7 a3,3 0 0 1 -3,-3 z" />
+    <path
+        android:fillColor="#F4F6F8"
+        android:pathData="M47.5,30 h13 v48 a3,3 0 0 1 -3,3 h-7 a3,3 0 0 1 -3,-3 z" />
+    <path
+        android:fillColor="#F4F6F8"
+        android:pathData="M63,30 h13 v48 a3,3 0 0 1 -3,3 h-7 a3,3 0 0 1 -3,-3 z" />
+    <!-- Two black keys -->
+    <path
+        android:fillColor="#1E242E"
+        android:pathData="M41.5,30 h8 v28 a2,2 0 0 1 -2,2 h-4 a2,2 0 0 1 -2,-2 z" />
+    <path
+        android:fillColor="#1E242E"
+        android:pathData="M58.5,30 h8 v28 a2,2 0 0 1 -2,2 h-4 a2,2 0 0 1 -2,-2 z" />
+    <!-- Accent dot: the note you are hunting -->
+    <path
+        android:fillColor="#4ADE80"
+        android:pathData="M53.5,71 m-3.2,0 a3.2,3.2 0 1 1 6.4,0 a3.2,3.2 0 1 1 -6.4,0" />
+</vector>
