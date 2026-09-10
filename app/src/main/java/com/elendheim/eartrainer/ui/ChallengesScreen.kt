@@ -134,6 +134,13 @@ private fun ChallengeCard(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            challenge.progression?.let { progression ->
+                Text(
+                    "${progression.name} loop: ${progression.figures}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Sky,
+                )
+            }
             if (unlocked) {
                 Button(
                     onClick = onPlay,

@@ -16,10 +16,14 @@ theory jargon.
 - **Daily challenge**: ten notes, the same set for the whole day, ramping
   from one octave of white keys up to the full C2-C7 roll. Finishing keeps
   your daily streak alive and pays a bonus.
-- **Challenges**: fifteen set runs you unlock as you level up — one opens
+- **Challenges**: eighteen set runs you unlock as you level up — one opens
   every five levels. Each is a fixed scenario, from "Warm Up" (one octave of
   white keys) all the way to "Full Roll" (the whole C2-C7 board, heard once).
   Clearing a challenge pays bonus XP and records your best score.
+- **Progression challenges**: three of those runs swap the reference C for a
+  chord loop — Chill (Imaj7 - vi7 - ii7 - V7), Pop (I - V - vi - IV) and Sad
+  (i - VI - III - VII). The loop sets the key, then you name the note sitting
+  inside it, which is much closer to how you hear notes in a real track.
 
 ## Levels and XP
 
@@ -27,6 +31,23 @@ Every correct answer earns XP, and harder settings pay more. The home screen
 shows your level, progress to the next one, and when your next challenge
 unlocks. Leveling up is what opens new challenges, so there is always
 something to reach for.
+
+## Voice mode
+
+Switch on **Sing the answer** in the settings and you name the note with your
+voice instead of your finger. It is off by default; with it off the app
+behaves exactly as it does above.
+
+- A **live tuner** shows the note you are humming as you hum it, so you can
+  hunt for the pitch before you commit to it.
+- When it feels right, hold the note and tap **Lock it in**. The app listens
+  for a moment and takes the steadiest pitch as your answer, so a wobbly
+  start or finish does not count against you.
+- **Any octave counts** by default, because nobody can sing C7. Match the
+  note name in whatever octave suits your range and it is correct.
+- Pitch is detected on device with the YIN algorithm. Nothing is recorded,
+  stored, or sent anywhere, and the microphone is only ever opened while a
+  question is on screen with voice mode switched on.
 
 ## Difficulty is yours to tune
 
@@ -42,6 +63,8 @@ something to reach for.
 - Kotlin + Jetpack Compose, single module, no third-party runtime deps
 - Notes are synthesized on device (additive synthesis with decaying
   harmonics), so there are no audio assets
+- Pitch detection is a hand-rolled YIN implementation over raw AudioRecord
+  frames, so voice mode adds no dependencies either
 - Progress is stored locally with DataStore; the app works fully offline
 - Min SDK 26 (Android 8.0), target SDK 35
 

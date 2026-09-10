@@ -1,5 +1,9 @@
 package com.elendheim.eartrainer.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -22,23 +26,30 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.elendheim.eartrainer.game.GameViewModel
 import com.elendheim.eartrainer.game.Mode
 import com.elendheim.eartrainer.game.Phase
 import com.elendheim.eartrainer.model.Difficulty
 import com.elendheim.eartrainer.model.Note
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 @Composable
 fun GameScreen(viewModel: GameViewModel, onExit: () -> Unit) {
@@ -73,6 +84,27 @@ fun GameScreen(viewModel: GameViewModel, onExit: () -> Unit) {
         if (ui.phase == Phase.ANSWERED) {
             selectedOctave = Note(ui.targetMidi).octave
         }
+    }
+
+    // Voice mode needs the mic; ask only when the player actually turns it on.
+    val context = LocalContext.current
+    var hasMic by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val micLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> hasMic = granted }
+
+    DisposableEffect(ui.voiceMode, hasMic, ui.phase) {
+        if (ui.voiceMode && hasMic && ui.phase == Phase.GUESSING) {
+            viewModel.startListening()
+        } else {
+            viewModel.stopListening()
+        }
+        onDispose { viewModel.stopListening() }
     }
 
     val highlights: Map<Int, Color> = if (ui.phase == Phase.ANSWERED) {
@@ -129,20 +161,55 @@ fun GameScreen(viewModel: GameViewModel, onExit: () -> Unit) {
             )
         }
 
+        ui.progressionFigures?.let { figures ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                Text(
+                    figures,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Sky,
+                    maxLines = 1,
+                    softWrap = false,
+                )
+            }
+        }
+
         Spacer(Modifier.weight(1f))
 
         when (ui.phase) {
-            Phase.GUESSING -> GuessingPanel(
-                replaysLeft = ui.replaysLeft,
-                unlimited = ui.difficulty.maxReplays >= Difficulty.REPLAYS_UNLIMITED,
-                referenceC = ui.difficulty.referenceC,
-                onReplay = { viewModel.replay() },
-            )
+            Phase.GUESSING -> if (ui.voiceMode) {
+                VoicePanel(
+                    hasMic = hasMic,
+                    livePitchMidi = ui.livePitchMidi,
+                    isCapturing = ui.isCapturing,
+                    hint = ui.voiceHint,
+                    anyOctave = ui.voiceAnyOctave,
+                    flStyleOctaves = ui.flStyleOctaves,
+                    replaysLeft = ui.replaysLeft,
+                    unlimited = ui.difficulty.maxReplays >= Difficulty.REPLAYS_UNLIMITED,
+                    onRequestMic = { micLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+                    onReplay = { viewModel.replay() },
+                    onCapture = { viewModel.captureSungNote() },
+                )
+            } else {
+                GuessingPanel(
+                    replaysLeft = ui.replaysLeft,
+                    unlimited = ui.difficulty.maxReplays >= Difficulty.REPLAYS_UNLIMITED,
+                    referenceC = ui.difficulty.referenceC,
+                    onReplay = { viewModel.replay() },
+                )
+            }
             Phase.ANSWERED -> AnswerPanel(
                 targetLabel = Note(ui.targetMidi).label(ui.flStyleOctaves),
                 guessLabel = Note(ui.guessMidi).label(ui.flStyleOctaves),
                 wasCorrect = ui.wasCorrect,
-                distance = Note.distanceText(ui.guessMidi, ui.targetMidi),
+                distance = if (ui.answeredByVoice && ui.voiceAnyOctave) {
+                    Note.pitchClassDistanceText(ui.guessMidi, ui.targetMidi)
+                } else {
+                    Note.distanceText(ui.guessMidi, ui.targetMidi)
+                },
+                byVoice = ui.answeredByVoice,
+                octaveShifted = ui.answeredByVoice && ui.wasCorrect &&
+                    ui.guessMidi != ui.targetMidi,
                 leveledUpTo = ui.leveledUpTo,
                 onCompare = { viewModel.compareGuessToTarget() },
                 onNext = { viewModel.next() },
@@ -229,11 +296,130 @@ private fun GuessingPanel(
 }
 
 @Composable
+private fun VoicePanel(
+    hasMic: Boolean,
+    livePitchMidi: Float,
+    isCapturing: Boolean,
+    hint: String?,
+    anyOctave: Boolean,
+    flStyleOctaves: Boolean,
+    replaysLeft: Int,
+    unlimited: Boolean,
+    onRequestMic: () -> Unit,
+    onReplay: () -> Unit,
+    onCapture: () -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = SurfaceHigh),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (!hasMic) {
+                Text(
+                    "Sing the note",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "Voice mode needs the microphone to hear what you sing. " +
+                        "Nothing is recorded or sent anywhere.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+                Button(
+                    onClick = onRequestMic,
+                    colors = ButtonDefaults.buttonColors(containerColor = Accent),
+                ) {
+                    Text("Allow microphone")
+                }
+                return@Column
+            }
+
+            // Live tuner: hunt for the note before committing to it.
+            val heard = livePitchMidi > 0f
+            val nearest = if (heard) livePitchMidi.roundToInt() else -1
+            val cents = if (heard) ((livePitchMidi - nearest) * 100f).roundToInt() else 0
+            val inTune = heard && abs(cents) <= 20
+
+            Text(
+                if (heard) Note(nearest).label(flStyleOctaves) else "--",
+                fontSize = 44.sp,
+                fontWeight = FontWeight.Bold,
+                color = when {
+                    !heard -> MaterialTheme.colorScheme.onSurfaceVariant
+                    inTune -> Accent
+                    else -> Sky
+                },
+                maxLines = 1,
+                softWrap = false,
+            )
+            Text(
+                when {
+                    !heard -> "Hum or sing and your note appears here"
+                    cents == 0 -> "dead on"
+                    cents > 0 -> "+$cents cents"
+                    else -> "$cents cents"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
+            )
+
+            Button(
+                onClick = onCapture,
+                enabled = !isCapturing,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Accent),
+            ) {
+                Text(if (isCapturing) "Listening, hold it..." else "Lock it in")
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                    onClick = onReplay,
+                    enabled = unlimited || replaysLeft > 0,
+                ) {
+                    Text(
+                        when {
+                            unlimited -> "Hear it again"
+                            replaysLeft > 0 -> "Again ($replaysLeft)"
+                            else -> "No replays"
+                        }
+                    )
+                }
+            }
+
+            Text(
+                hint ?: if (anyOctave) {
+                    "Any octave counts, so sing it where it sits comfortably."
+                } else {
+                    "Sing it in the same octave you heard."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (hint != null) Warm else MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
 private fun AnswerPanel(
     targetLabel: String,
     guessLabel: String,
     wasCorrect: Boolean,
     distance: String,
+    byVoice: Boolean,
+    octaveShifted: Boolean,
     leveledUpTo: Int,
     onCompare: () -> Unit,
     onNext: () -> Unit,
@@ -257,6 +443,14 @@ private fun AnswerPanel(
                     fontWeight = FontWeight.Bold,
                     color = Accent,
                 )
+                if (octaveShifted) {
+                    Text(
+                        "You sang $guessLabel, same note a different octave.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
+                }
             } else {
                 Text(
                     "It was $targetLabel",
@@ -265,7 +459,7 @@ private fun AnswerPanel(
                     color = Wrong,
                 )
                 Text(
-                    "You said $guessLabel — $distance.",
+                    (if (byVoice) "You sang " else "You said ") + "$guessLabel — $distance.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,

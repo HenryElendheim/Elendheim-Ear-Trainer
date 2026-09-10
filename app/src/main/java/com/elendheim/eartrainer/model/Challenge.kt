@@ -11,6 +11,10 @@ data class Challenge(
     val blurb: String,
     val difficulty: Difficulty,
     val questionCount: Int = 10,
+    /** When set, this loop plays as the anchor instead of a reference C. */
+    val progression: Progression? = null,
+    /** Root the progression is rendered in; chords sit below the melody. */
+    val keyRootMidi: Int = 48,
 ) {
     /** The level this challenge unlocks at. */
     fun unlockLevel(): Int = Challenges.unlockLevelForIndex(Challenges.all.indexOfFirst { it.id == id })
@@ -42,6 +46,13 @@ object Challenges {
             Difficulty(60, 71, includeBlackKeys = false, maxReplays = 3, referenceC = false),
         ),
         Challenge(
+            "chill_changes", "Chill Changes",
+            "A lazy Imaj7 loop sets the key, then name the note over it.",
+            Difficulty(60, 71, includeBlackKeys = false, maxReplays = 3, referenceC = false),
+            progression = Progressions.CHILL,
+            keyRootMidi = 48,
+        ),
+        Challenge(
             "two_octaves", "Two Octaves",
             "White keys across C4 to B5. The range opens up.",
             Difficulty(60, 83, includeBlackKeys = false, maxReplays = 3, referenceC = true),
@@ -55,6 +66,13 @@ object Challenges {
             "sharps_solo", "Sharps Solo",
             "All twelve keys, no anchor.",
             Difficulty(60, 71, includeBlackKeys = true, maxReplays = 3, referenceC = false),
+        ),
+        Challenge(
+            "pop_changes", "Pop Changes",
+            "The four chords behind half the charts. Name the note they frame.",
+            Difficulty(60, 71, includeBlackKeys = false, maxReplays = 3, referenceC = false),
+            progression = Progressions.POP,
+            keyRootMidi = 48,
         ),
         Challenge(
             "low_end", "Low End",
@@ -75,6 +93,13 @@ object Challenges {
             "full_keys_mid", "Full Keys",
             "Every key across two octaves, no anchor.",
             Difficulty(60, 83, includeBlackKeys = true, maxReplays = 3, referenceC = false),
+        ),
+        Challenge(
+            "sad_changes", "Sad Changes",
+            "A minor loop that falls away. Find the note inside it.",
+            Difficulty(60, 71, includeBlackKeys = false, maxReplays = 3, referenceC = false),
+            progression = Progressions.SAD,
+            keyRootMidi = 48,
         ),
         Challenge(
             "one_shot", "One Shot",

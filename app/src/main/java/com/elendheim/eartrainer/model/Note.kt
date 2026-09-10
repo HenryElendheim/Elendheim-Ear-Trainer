@@ -39,6 +39,19 @@ data class Note(val midi: Int) {
     companion object {
         const val MIDDLE_C = 60
 
+        /**
+         * Distance ignoring octave, for sung answers where matching the exact
+         * octave is not the point.
+         */
+        fun pitchClassDistanceText(guess: Int, actual: Int): String {
+            val raw = Math.floorMod(guess - actual, 12)
+            if (raw == 0) return "same note"
+            val up = raw <= 6
+            val steps = if (up) raw else 12 - raw
+            val unit = if (steps == 1) "1 semitone" else "$steps semitones"
+            return "$unit too " + if (up) "high" else "low"
+        }
+
         /** Number of keys between two notes, phrased for feedback text. */
         fun distanceText(guess: Int, actual: Int): String {
             val diff = guess - actual

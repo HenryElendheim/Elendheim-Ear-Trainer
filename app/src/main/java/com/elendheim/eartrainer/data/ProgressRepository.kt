@@ -25,6 +25,10 @@ data class PlayerState(
     val lastDailyScore: Int = -1,
     val difficulty: Difficulty = Difficulty(),
     val flStyleOctaves: Boolean = false,
+    /** Sing answers instead of tapping them. Off leaves the base app as-is. */
+    val voiceMode: Boolean = false,
+    /** Count a sung note correct in any octave, since vocal range is limited. */
+    val voiceAnyOctave: Boolean = true,
     /** Best score per challenge id; absent means never cleared. */
     val challengeBest: Map<String, Int> = emptyMap(),
 ) {
@@ -54,6 +58,8 @@ class ProgressRepository(private val context: Context) {
         val DIFF_REPLAYS = intPreferencesKey("diff_replays")
         val DIFF_REFERENCE_C = booleanPreferencesKey("diff_reference_c")
         val FL_OCTAVES = booleanPreferencesKey("fl_octaves")
+        val VOICE_MODE = booleanPreferencesKey("voice_mode")
+        val VOICE_ANY_OCTAVE = booleanPreferencesKey("voice_any_octave")
         fun challengeBest(id: String) = intPreferencesKey("challenge_best_$id")
     }
 
@@ -75,6 +81,8 @@ class ProgressRepository(private val context: Context) {
                 referenceC = prefs[Keys.DIFF_REFERENCE_C] ?: true,
             ),
             flStyleOctaves = prefs[Keys.FL_OCTAVES] ?: false,
+            voiceMode = prefs[Keys.VOICE_MODE] ?: false,
+            voiceAnyOctave = prefs[Keys.VOICE_ANY_OCTAVE] ?: true,
             challengeBest = Challenges.all.mapNotNull { challenge ->
                 prefs[Keys.challengeBest(challenge.id)]?.let { challenge.id to it }
             }.toMap(),
@@ -154,6 +162,18 @@ class ProgressRepository(private val context: Context) {
     suspend fun setFlStyleOctaves(enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[Keys.FL_OCTAVES] = enabled
+        }
+    }
+
+    suspend fun setVoiceMode(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.VOICE_MODE] = enabled
+        }
+    }
+
+    suspend fun setVoiceAnyOctave(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.VOICE_ANY_OCTAVE] = enabled
         }
     }
 }

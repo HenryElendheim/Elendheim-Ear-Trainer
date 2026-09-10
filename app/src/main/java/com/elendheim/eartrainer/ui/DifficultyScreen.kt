@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Switch
@@ -35,8 +36,12 @@ import com.elendheim.eartrainer.model.Note
 fun DifficultyScreen(
     initial: Difficulty,
     flStyleOctaves: Boolean,
+    voiceMode: Boolean,
+    voiceAnyOctave: Boolean,
     onSave: (Difficulty) -> Unit,
     onSetFlStyleOctaves: (Boolean) -> Unit,
+    onSetVoiceMode: (Boolean) -> Unit,
+    onSetVoiceAnyOctave: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     var difficulty by remember { mutableStateOf(initial) }
@@ -44,6 +49,8 @@ fun DifficultyScreen(
         mutableStateOf(initial.lowMidi.toFloat()..initial.highMidi.toFloat())
     }
     var flOctaves by remember { mutableStateOf(flStyleOctaves) }
+    var voice by remember { mutableStateOf(voiceMode) }
+    var anyOctave by remember { mutableStateOf(voiceAnyOctave) }
 
     fun update(newDifficulty: Difficulty) {
         difficulty = newDifficulty
@@ -187,6 +194,42 @@ fun DifficultyScreen(
                 onSetFlStyleOctaves(it)
             },
         )
+
+        HorizontalDivider(color = SurfaceHigh)
+
+        Text(
+            "Voice mode",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        ToggleRow(
+            title = "Sing the answer",
+            subtitle = "Hum or sing the note instead of tapping a key. " +
+                "Leave this off for the normal tap-a-key app.",
+            checked = voice,
+            onCheckedChange = {
+                voice = it
+                onSetVoiceMode(it)
+            },
+        )
+        if (voice) {
+            ToggleRow(
+                title = "Any octave counts",
+                subtitle = "Match the note name and it counts, whatever octave " +
+                    "you can comfortably reach.",
+                checked = anyOctave,
+                onCheckedChange = {
+                    anyOctave = it
+                    onSetVoiceAnyOctave(it)
+                },
+            )
+            Text(
+                "Find the note with the live tuner first, then hold it and tap " +
+                    "Lock it in. Needs microphone permission the first time.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         Spacer(Modifier.height(4.dp))
         Text(
