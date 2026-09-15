@@ -15,10 +15,14 @@ class PitchDetector(
     private val tauMin = (sampleRate / maxFrequency).toInt().coerceAtLeast(2)
     private val tauMax = (sampleRate / minFrequency).toInt()
 
+    /** Quietest frame still treated as singing; driven by the mic sensitivity setting. */
+    @Volatile
+    var silenceRms: Float = DEFAULT_SILENCE_RMS
+
     /** Frequency in Hz, or -1 when the frame carries no clear pitch. */
     fun detect(buffer: FloatArray): Float {
         if (buffer.size <= tauMax + MIN_WINDOW) return -1f
-        if (rms(buffer) < SILENCE_RMS) return -1f
+        if (rms(buffer) < silenceRms) return -1f
 
         val window = buffer.size - tauMax
         val diff = FloatArray(tauMax + 1)
@@ -78,7 +82,7 @@ class PitchDetector(
 
     companion object {
         private const val THRESHOLD = 0.12f
-        private const val SILENCE_RMS = 0.008f
+        private const val DEFAULT_SILENCE_RMS = 0.008f
         private const val MIN_WINDOW = 256
 
         /** Fractional MIDI number, so cents survive the conversion. */

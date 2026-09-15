@@ -12,6 +12,7 @@ import com.elendheim.eartrainer.model.Difficulty
 import com.elendheim.eartrainer.model.Leveling
 import com.elendheim.eartrainer.model.Note
 import com.elendheim.eartrainer.model.Progression
+import com.elendheim.eartrainer.model.VoiceSettings
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,6 +59,8 @@ data class GameUiState(
     val isCapturing: Boolean = false,
     val voiceHint: String? = null,
     val answeredByVoice: Boolean = false,
+    /** Cents either side of the note the tuner still calls in tune. */
+    val inTuneCents: Int = 20,
     /** Roman-numeral figures of the loop backing this run, if any. */
     val progressionFigures: String? = null,
 )
@@ -104,6 +107,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 flStyleOctaves = player.flStyleOctaves,
                 voiceMode = player.voiceMode,
                 voiceAnyOctave = player.voiceAnyOctave,
+                inTuneCents = player.voiceSettings.inTuneCents,
             )
             playTarget()
         }
@@ -129,6 +133,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 flStyleOctaves = player.flStyleOctaves,
                 voiceMode = player.voiceMode,
                 voiceAnyOctave = player.voiceAnyOctave,
+                inTuneCents = player.voiceSettings.inTuneCents,
             )
             playTarget()
         }
@@ -160,6 +165,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 previousBest = player.bestFor(challenge.id) ?: -1,
                 voiceMode = player.voiceMode,
                 voiceAnyOctave = player.voiceAnyOctave,
+                inTuneCents = player.voiceSettings.inTuneCents,
                 progressionFigures = challenge.progression?.figures,
             )
             playTarget()
@@ -245,7 +251,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     /** Live tuner: lets the player hunt for the note before committing. */
     fun startListening() {
         if (voiceListener.isRunning) return
-        voiceListener.start(viewModelScope) { midi ->
+        val settings = playerState.value.voiceSettings
+        _uiState.update { it.copy(inTuneCents = settings.inTuneCents) }
+        voiceListener.start(viewModelScope, settings) { midi ->
             _uiState.update { it.copy(livePitchMidi = midi) }
         }
     }
@@ -264,11 +272,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun captureSungNote() {
         val state = _uiState.value
         if (state.phase != Phase.GUESSING || captureJob != null) return
+        val captureMillis = playerState.value.voiceSettings.captureMillis
         _uiState.update { it.copy(isCapturing = true, voiceHint = null) }
         captureJob = viewModelScope.launch {
             val heard = mutableListOf<Float>()
             var elapsed = 0L
-            while (elapsed < CAPTURE_MILLIS) {
+            while (elapsed < captureMillis) {
                 val pitch = _uiState.value.livePitchMidi
                 if (pitch > 0f) heard.add(pitch)
                 delay(CAPTURE_POLL_MILLIS)
@@ -437,6 +446,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repository.setVoiceAnyOctave(enabled) }
     }
 
+    /** Read again each time the mic starts, so this lands on the next question. */
+    fun saveVoiceSettings(settings: VoiceSettings) {
+        viewModelScope.launch { repository.saveVoiceSettings(settings) }
+    }
+
     override fun onCleared() {
         voiceListener.stop()
         tonePlayer.release()
@@ -447,7 +461,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         const val DAILY_COMPLETION_BONUS = 30
         const val CHALLENGE_CLEAR_BONUS = 40
         private const val CHORD_STEP_MILLIS = 900L
-        private const val CAPTURE_MILLIS = 1600L
         private const val CAPTURE_POLL_MILLIS = 40L
         private const val MIN_CAPTURE_SAMPLES = 6
     }

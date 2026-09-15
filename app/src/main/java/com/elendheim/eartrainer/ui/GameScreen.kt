@@ -183,6 +183,7 @@ fun GameScreen(viewModel: GameViewModel, onExit: () -> Unit) {
                     isCapturing = ui.isCapturing,
                     hint = ui.voiceHint,
                     anyOctave = ui.voiceAnyOctave,
+                    inTuneCents = ui.inTuneCents,
                     flStyleOctaves = ui.flStyleOctaves,
                     replaysLeft = ui.replaysLeft,
                     unlimited = ui.difficulty.maxReplays >= Difficulty.REPLAYS_UNLIMITED,
@@ -302,6 +303,7 @@ private fun VoicePanel(
     isCapturing: Boolean,
     hint: String?,
     anyOctave: Boolean,
+    inTuneCents: Int,
     flStyleOctaves: Boolean,
     replaysLeft: Int,
     unlimited: Boolean,
@@ -347,7 +349,7 @@ private fun VoicePanel(
             val heard = livePitchMidi > 0f
             val nearest = if (heard) livePitchMidi.roundToInt() else -1
             val cents = if (heard) ((livePitchMidi - nearest) * 100f).roundToInt() else 0
-            val inTune = heard && abs(cents) <= 20
+            val inTune = heard && abs(cents) <= inTuneCents
 
             Text(
                 if (heard) Note(nearest).label(flStyleOctaves) else "--",

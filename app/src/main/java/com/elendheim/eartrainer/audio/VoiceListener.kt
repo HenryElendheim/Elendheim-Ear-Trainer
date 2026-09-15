@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import com.elendheim.eartrainer.model.VoiceSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -26,8 +27,10 @@ class VoiceListener(private val sampleRate: Int = 22050) {
 
     /** Caller must hold RECORD_AUDIO; the permission check lives in the UI. */
     @SuppressLint("MissingPermission")
-    fun start(scope: CoroutineScope, onPitch: (Float) -> Unit) {
+    fun start(scope: CoroutineScope, settings: VoiceSettings, onPitch: (Float) -> Unit) {
         if (isRunning) return
+        detector.silenceRms = settings.silenceRms
+        val smoothing = settings.smoothingFrames
         job = scope.launch(Dispatchers.Default) {
             val minBuffer = AudioRecord.getMinBufferSize(
                 sampleRate,
@@ -58,6 +61,10 @@ class VoiceListener(private val sampleRate: Int = 22050) {
 
             val shorts = ShortArray(frame)
             val floats = FloatArray(frame)
+            // Rolling median of the last few frames: how hard the reading
+            // fights back against a wobbling voice is the steadiness setting.
+            val history = ArrayDeque<Float>()
+            var misses = 0
             try {
                 record.startRecording()
                 while (isActive) {
@@ -66,7 +73,20 @@ class VoiceListener(private val sampleRate: Int = 22050) {
                     for (i in 0 until read) floats[i] = shorts[i] / 32768f
                     for (i in read until frame) floats[i] = 0f
                     val hz = detector.detect(floats)
-                    onPitch(if (hz > 0f) PitchDetector.midiFromFrequency(hz) else -1f)
+                    if (hz > 0f) {
+                        misses = 0
+                        history.addLast(PitchDetector.midiFromFrequency(hz))
+                        while (history.size > smoothing) history.removeFirst()
+                        onPitch(median(history))
+                    } else {
+                        // One dropped frame mid-note should not blank the
+                        // display; a run of them means they stopped singing.
+                        misses++
+                        if (misses >= MISSES_BEFORE_SILENT) {
+                            history.clear()
+                            onPitch(-1f)
+                        }
+                    }
                 }
             } catch (e: IllegalStateException) {
                 // Another app holds the mic; fall through and clean up.
@@ -84,5 +104,15 @@ class VoiceListener(private val sampleRate: Int = 22050) {
     fun stop() {
         job?.cancel()
         job = null
+    }
+
+    private fun median(values: Collection<Float>): Float {
+        if (values.isEmpty()) return -1f
+        val sorted = values.sorted()
+        return sorted[sorted.size / 2]
+    }
+
+    private companion object {
+        const val MISSES_BEFORE_SILENT = 2
     }
 }

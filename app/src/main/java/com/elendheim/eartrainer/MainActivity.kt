@@ -93,10 +93,12 @@ private fun AppRoot(viewModel: GameViewModel = viewModel()) {
                     flStyleOctaves = player.flStyleOctaves,
                     voiceMode = player.voiceMode,
                     voiceAnyOctave = player.voiceAnyOctave,
+                    voiceSettings = player.voiceSettings,
                     onSave = { viewModel.saveDifficulty(it) },
                     onSetFlStyleOctaves = { viewModel.setFlStyleOctaves(it) },
                     onSetVoiceMode = { viewModel.setVoiceMode(it) },
                     onSetVoiceAnyOctave = { viewModel.setVoiceAnyOctave(it) },
+                    onSaveVoiceSettings = { viewModel.saveVoiceSettings(it) },
                     onBack = { screen = SCREEN_HOME },
                 )
             }

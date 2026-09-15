@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import com.elendheim.eartrainer.model.DIFFICULTY_PRESETS
 import com.elendheim.eartrainer.model.Difficulty
 import com.elendheim.eartrainer.model.Note
+import com.elendheim.eartrainer.model.VoiceSettings
 
 @Composable
 fun DifficultyScreen(
@@ -38,10 +39,12 @@ fun DifficultyScreen(
     flStyleOctaves: Boolean,
     voiceMode: Boolean,
     voiceAnyOctave: Boolean,
+    voiceSettings: VoiceSettings,
     onSave: (Difficulty) -> Unit,
     onSetFlStyleOctaves: (Boolean) -> Unit,
     onSetVoiceMode: (Boolean) -> Unit,
     onSetVoiceAnyOctave: (Boolean) -> Unit,
+    onSaveVoiceSettings: (VoiceSettings) -> Unit,
     onBack: () -> Unit,
 ) {
     var difficulty by remember { mutableStateOf(initial) }
@@ -51,6 +54,12 @@ fun DifficultyScreen(
     var flOctaves by remember { mutableStateOf(flStyleOctaves) }
     var voice by remember { mutableStateOf(voiceMode) }
     var anyOctave by remember { mutableStateOf(voiceAnyOctave) }
+    var voiceTuning by remember { mutableStateOf(voiceSettings) }
+
+    fun tune(updated: VoiceSettings) {
+        voiceTuning = updated
+        onSaveVoiceSettings(updated)
+    }
 
     fun update(newDifficulty: Difficulty) {
         difficulty = newDifficulty
@@ -229,6 +238,37 @@ fun DifficultyScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            LevelChips(
+                title = "Mic sensitivity",
+                subtitle = "Raise it if it never hears you, lower it if the room " +
+                    "sets it off.",
+                labels = VoiceSettings.SENSITIVITY_LABELS,
+                selected = voiceTuning.sensitivity,
+                onSelect = { tune(voiceTuning.copy(sensitivity = it)) },
+            )
+            LevelChips(
+                title = "Listening time",
+                subtitle = "How long Lock it in listens before it answers.",
+                labels = VoiceSettings.CAPTURE_LABELS,
+                selected = voiceTuning.captureLength,
+                onSelect = { tune(voiceTuning.copy(captureLength = it)) },
+            )
+            LevelChips(
+                title = "Tuner steadiness",
+                subtitle = "Snappy reacts instantly, Smooth rides out a wobble.",
+                labels = VoiceSettings.STEADINESS_LABELS,
+                selected = voiceTuning.steadiness,
+                onSelect = { tune(voiceTuning.copy(steadiness = it)) },
+            )
+            LevelChips(
+                title = "In-tune window",
+                subtitle = "How close counts as on the note: " +
+                    "${voiceTuning.inTuneCents} cents either side.",
+                labels = VoiceSettings.TOLERANCE_LABELS,
+                selected = voiceTuning.tolerance,
+                onSelect = { tune(voiceTuning.copy(tolerance = it)) },
+            )
         }
 
         Spacer(Modifier.height(4.dp))
@@ -239,6 +279,42 @@ fun DifficultyScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(8.dp))
+    }
+}
+
+/** A labelled three-way choice; chips stay one line so nothing wraps. */
+@Composable
+private fun LevelChips(
+    title: String,
+    subtitle: String,
+    labels: List<String>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+        Text(
+            subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            labels.forEachIndexed { index, label ->
+                FilterChip(
+                    selected = selected == index,
+                    onClick = { onSelect(index) },
+                    label = { Text(label, maxLines = 1, softWrap = false) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = AccentDim,
+                        selectedLabelColor = Color.White,
+                    ),
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
     }
 }
 

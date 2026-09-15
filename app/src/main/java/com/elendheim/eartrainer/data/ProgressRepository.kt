@@ -9,6 +9,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.elendheim.eartrainer.model.Challenges
 import com.elendheim.eartrainer.model.Difficulty
 import com.elendheim.eartrainer.model.Leveling
+import com.elendheim.eartrainer.model.VoiceSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -29,6 +30,8 @@ data class PlayerState(
     val voiceMode: Boolean = false,
     /** Count a sung note correct in any octave, since vocal range is limited. */
     val voiceAnyOctave: Boolean = true,
+    /** How voice mode listens: sensitivity, capture length, steadiness, tolerance. */
+    val voiceSettings: VoiceSettings = VoiceSettings(),
     /** Best score per challenge id; absent means never cleared. */
     val challengeBest: Map<String, Int> = emptyMap(),
 ) {
@@ -60,6 +63,10 @@ class ProgressRepository(private val context: Context) {
         val FL_OCTAVES = booleanPreferencesKey("fl_octaves")
         val VOICE_MODE = booleanPreferencesKey("voice_mode")
         val VOICE_ANY_OCTAVE = booleanPreferencesKey("voice_any_octave")
+        val VOICE_SENSITIVITY = intPreferencesKey("voice_sensitivity")
+        val VOICE_CAPTURE = intPreferencesKey("voice_capture")
+        val VOICE_STEADINESS = intPreferencesKey("voice_steadiness")
+        val VOICE_TOLERANCE = intPreferencesKey("voice_tolerance")
         fun challengeBest(id: String) = intPreferencesKey("challenge_best_$id")
     }
 
@@ -83,6 +90,12 @@ class ProgressRepository(private val context: Context) {
             flStyleOctaves = prefs[Keys.FL_OCTAVES] ?: false,
             voiceMode = prefs[Keys.VOICE_MODE] ?: false,
             voiceAnyOctave = prefs[Keys.VOICE_ANY_OCTAVE] ?: true,
+            voiceSettings = VoiceSettings(
+                sensitivity = prefs[Keys.VOICE_SENSITIVITY] ?: 1,
+                captureLength = prefs[Keys.VOICE_CAPTURE] ?: 1,
+                steadiness = prefs[Keys.VOICE_STEADINESS] ?: 1,
+                tolerance = prefs[Keys.VOICE_TOLERANCE] ?: 1,
+            ),
             challengeBest = Challenges.all.mapNotNull { challenge ->
                 prefs[Keys.challengeBest(challenge.id)]?.let { challenge.id to it }
             }.toMap(),
@@ -174,6 +187,15 @@ class ProgressRepository(private val context: Context) {
     suspend fun setVoiceAnyOctave(enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[Keys.VOICE_ANY_OCTAVE] = enabled
+        }
+    }
+
+    suspend fun saveVoiceSettings(settings: VoiceSettings) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.VOICE_SENSITIVITY] = VoiceSettings.clampLevel(settings.sensitivity)
+            prefs[Keys.VOICE_CAPTURE] = VoiceSettings.clampLevel(settings.captureLength)
+            prefs[Keys.VOICE_STEADINESS] = VoiceSettings.clampLevel(settings.steadiness)
+            prefs[Keys.VOICE_TOLERANCE] = VoiceSettings.clampLevel(settings.tolerance)
         }
     }
 }

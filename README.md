@@ -49,6 +49,16 @@ behaves exactly as it does above.
   stored, or sent anywhere, and the microphone is only ever opened while a
   question is on screen with voice mode switched on.
 
+Four settings tune how it listens, because the right feel depends on your
+voice, your phone and your room:
+
+| Setting | What it changes |
+| --- | --- |
+| Mic sensitivity | How quiet a sound still counts as singing. Raise it if it never hears you, lower it if the room sets it off. |
+| Listening time | How long "Lock it in" listens before answering: 1s, 1.6s or 2.5s. |
+| Tuner steadiness | Snappy reacts instantly; Smooth averages more frames and rides out a wobble. |
+| In-tune window | How close counts as on the note: 10, 20 or 35 cents either side. |
+
 ## Difficulty is yours to tune
 
 - Note range, anywhere from one octave up to C2-C7
